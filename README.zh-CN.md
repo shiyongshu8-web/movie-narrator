@@ -1,23 +1,24 @@
 [![English](https://img.shields.io/badge/English-README-blue)](README.md)
 [![简体中文](https://img.shields.io/badge/简体中文-README-green)](README.zh-CN.md)
 
-# 🎬 Movie Narrator
+# 🎬 影视解说自动化剪辑 | Movie Narrator
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
-![CI](https://github.com/zcbacxc/movie-narrator/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/shiyongshu8-web/movie-narrator/actions/workflows/ci.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/movie-narrator)
 ![Downloads](https://img.shields.io/pypi/dm/movie-narrator)
 
-> 一个提示 → 一个带解说的电影视频
+> 一份解说需求 → 一条经过审核的电影/短剧解说视频
 
-Movie Narrator 是一个开源工具包，可通过简单命令自动生成带有解说、字幕和渲染输出的电影解说视频。
+Movie Narrator 是一个面向电影与短剧的 AI 影视解说自动化剪辑工具，可从来源素材分析、解说文案、AI 配音、字幕、镜头匹配到 FFmpeg 成片渲染，并在关键步骤保留人工审核门禁。
 
 ---
 
 ## 功能特性
 
-- 🎬 LLM 驱动的电影解说脚本生成
+- 🎬 LLM 驱动的电影与短剧解说文案生成
+- 🛡️ 来源优先的素材核验与人工审核门禁
 - 🔊 文字转语音解说（默认使用 Edge-TTS）
 - 💬 自动生成 SRT 字幕文件
 - 🌐 多语言字幕（LLM 翻译）
@@ -47,7 +48,7 @@ Movie Narrator 是一个开源工具包，可通过简单命令自动生成带�
 
 ---
 
-## 安装 Movie Narrator
+## 安装影视解说自动化剪辑
 
 ### 从 PyPI 安装
 
@@ -58,7 +59,7 @@ pip install movie-narrator
 ### 从源码安装
 
 ```bash
-git clone https://github.com/zcbacxc/movie-narrator.git
+git clone https://github.com/shiyongshu8-web/movie-narrator.git
 cd movie-narrator
 pip install -e .
 ```
@@ -261,3 +262,4 @@ movie-narrator/
 ## 许可证
 
 基于 [AGPL-3.0-or-later](LICENSE) 许可证发布。
+
