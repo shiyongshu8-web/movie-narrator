@@ -1,0 +1,2 @@
+[console_scripts]
+mn = movie_narrator.cli:app
