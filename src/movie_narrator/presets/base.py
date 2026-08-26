@@ -1,0 +1,173 @@
+# SPDX-FileCopyrightText: 2026 zcbacxc
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Preset protocol and data structures.
+
+A :class:`Preset` is a named bundle of parameter defaults and prompt
+shaping tags.  The interface is intentionally minimal so that future
+SPI discover (entry-points / local folder) can wrap any callable that
+returns the right shape.
+
+Prompt tags are a closed vocabulary — the preset may only return keys
+listed in :data:`ALLOWED_PROMPT_TAGS`, and the values must be one of
+the enumerated options.  This prevents prompt-template condition
+branches from exploding.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, Protocol, runtime_checkable
+
+# ── Closed prompt-tag vocabulary ────────────────────────────
+# Each key maps to the set of allowed string values.  Presets that
+# return tags outside this vocabulary will be rejected at registration
+# time.
+ALLOWED_PROMPT_TAGS: Dict[str, frozenset[str]] = {
+    "prompt_cadence": frozenset({"measured", "brisk", "languid"}),
+    "prompt_register": frozenset({"spoken", "written", "mixed"}),
+    "prompt_connectors": frozenset({"interjection", "narrative", "none"}),
+}
+
+# ── Param keys that presets are allowed to set ──────────────
+# Must be a subset of PARAM_WHITELIST (runner.py).  Validated at
+# registration time.  Single source of truth lives in runner.py;
+# this frozenset is intentionally a subset so presets can't set
+# infrastructure keys (whisperx_*, translate_*, async_*, video_sizes).
+ALLOWED_PARAM_KEYS: frozenset[str] = frozenset(
+    {
+        # Match / scene
+        "match_speed_clamp_min",
+        "match_speed_clamp_max",
+        "scene_merge_min_duration",
+        "match_drop_scene_min_duration",
+        "match_min_score",
+        # Scene filtering configuration
+        "match_skip_intro_sec",
+        "match_drop_dark_luma",
+        "match_source_window",
+        # BGM
+        "bgm_gain_db",
+        "bgm_duck_db",
+        "bgm_normalize",
+        "audio_target_dbfs",
+        "bgm_loudnorm",
+        # BGM emotion-based selection metadata file
+        "bgm_metadata_path",
+        # Render / subtitle
+        "render_subtitle_position",
+        "render_subtitle_max_width_ratio",
+        "render_subtitle_bottom_margin_ratio",
+        "render_font_size",
+        "render_fit_mode",
+        "render_crf",
+        "render_preset",
+        "render_faststart",
+        # TTS pacing
+        "tts_pause_ms",
+        # QA
+        "qa_enabled",
+        "qa_max_silence_db",
+        "qa_min_duration_ratio",
+        "qa_max_duration_ratio",
+        "qa_max_slideshow_risk",
+        "qa_max_black_ratio",
+        # Prompt shaping (new — added to whitelist in schema/load/runner)
+        "prompt_target_sentences",
+        "prompt_target_segment_duration",
+        "prompt_max_chars_per_sentence",
+        "prompt_hook_seconds",
+        # Hook templates and set pieces
+        "hook_templates",
+        "set_pieces",
+        # Title card, cover export, and vertical safe area
+        "render_title_card_sec",
+        "render_cover_export",
+        "render_vertical_safe_area",
+        # Target platform for tone adaptation
+        "target_platform",
+        # Narration language
+        "lang",
+        # Render template — per-preset styling dict
+        "render_template",
+        # Narrator perspective and character anchor
+        "narrator_perspective",
+        "focus_character",
+    }
+)
+
+# Safety: ALLOWED_PARAM_KEYS must be a subset of PARAM_WHITELIST.
+# This check is performed in registry._validate() at registration time
+# to avoid a circular import (runner.py imports presets indirectly).
+
+
+@runtime_checkable
+class Preset(Protocol):
+    """A narration style preset.
+
+    Implementations may be classes or modules; the only requirement is
+    that they expose ``name``, ``params()``, ``prompt_tags()``, and
+    ``description()``.
+    """
+
+    #: Unique preset identifier (kebab-case, e.g. ``"mainstream-dry"``).
+    name: str
+
+    def params(self) -> Dict[str, Any]:
+        """
+        Returns:
+            JobParams-compatible key-value defaults.
+
+            Keys must be in :data:`ALLOWED_PARAM_KEYS`.  Values must be
+            valid for the corresponding :class:`JobParams` field.
+        """
+        ...
+
+    def prompt_tags(self) -> Dict[str, str]:
+        """
+        Returns:
+            Closed-vocabulary prompt shaping labels.
+
+            Keys must be in :data:`ALLOWED_PROMPT_TAGS` and values must be
+            in the corresponding allowed set.
+        """
+        ...
+
+    def description(self) -> str:
+        """Human-readable description shown in ``--help`` and docs."""
+        ...
+
+    def render_template(self) -> Dict[str, Any]:
+        """
+        Returns:
+            Render styling options for overlay text.
+
+            All keys are optional.  Recognised keys:
+
+            - ``title_card_text`` (str): text for the opening title card.
+            - ``end_card_text`` (str): text for the closing end card.
+            - ``watermark_text`` (str): small semi-transparent top-right text.
+            - ``disclaimer_text`` (str): small text shown at the very bottom.
+            - ``slogan_text`` (str): promotional slogan overlay.
+            - ``aspect_safe_area`` (dict): safe-area ratios with keys
+            ``max_width_ratio`` (float) and ``bottom_margin_ratio`` (float).
+
+            The ``{movie}`` placeholder in any string value is replaced with
+            the actual movie name at render time.
+        """
+        ...
+
+
+@dataclass(frozen=True)
+class PresetParam:
+    """Materialised preset parameters ready for merge into ctx.metadata.
+
+    Created by :func:`movie_narrator.presets.registry.get_preset` after
+    validation.  ``param_dict`` is the validated ``params()`` output;
+    ``tag_dict`` is the validated ``prompt_tags()`` output.
+    """
+
+    name: str
+    param_dict: Dict[str, Any] = field(default_factory=dict)
+    tag_dict: Dict[str, str] = field(default_factory=dict)
+    desc: str = ""
