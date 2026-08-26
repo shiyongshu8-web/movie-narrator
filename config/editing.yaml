@@ -1,0 +1,20 @@
+editing:
+  # ChatCut is the preferred editable backend when the official MCP connector
+  # is authenticated.  FFmpeg remains available for local render/debug and
+  # for an explicitly configured fallback.
+  backend: chatcut
+  fallback_backend: ffmpeg
+  chatcut:
+    enabled: true
+    verify_after_edit: true
+    semantic_qc: true
+    endpoint: https://api.chatcut.io/api/external-mcp/mcp
+tracks:
+  V1: original_picture
+  V2: b_roll
+  V3: graphics
+  A1: original_audio
+  A2: narration
+  A3: bgm
+  A4: sfx
+  C1: captions

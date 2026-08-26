@@ -1,0 +1,15 @@
+alignment:
+  preferred_visual_lead:
+    min: 0.0
+    max: 1.5
+  narration_lead_soft_limit:
+    seconds: 0.5
+  narration_lead_hard_limit:
+    seconds: 1.0
+  normal_event_tolerance:
+    seconds: 1.5
+  critical_event_tolerance:
+    seconds: 0.8
+  repair:
+    max_rounds: 3
+    max_speed_change: 0.08
