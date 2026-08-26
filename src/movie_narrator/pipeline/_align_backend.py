@@ -1,0 +1,179 @@
+# SPDX-FileCopyrightText: 2026 zcbacxc
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Environment-adaptive backend selection for audio alignment.
+
+WhisperX (the original backend) depends on pyannote VAD → speechbrain →
+k2-fsa, whose C++ extension has no prebuilt Windows CPU wheel. On top of
+that, torch 2.8's ``weights_only=True`` default rejects pyannote's
+omegaconf pickle. These are upstream issues that make WhisperX unusable
+on Windows CPU and fragile on Linux CPU.
+
+faster-whisper is a CTranslate2 reimplementation that does not depend on
+pyannote / speechbrain / k2-fsa. Manual QA showed it transcribes 60s
+of Chinese audio in 1.9s on CPU with the ``small`` model, producing 18
+accurate segments. The only thing it lacks is word-level forced
+alignment, but ``subtitle.py`` only consumes segment-level timestamps
+(``seg.start`` / ``seg.end`` / ``seg.text``), so the loss has zero
+downstream impact.
+
+This module decides which backend to use, runs it, and returns a
+uniform ``wx_segments`` list that ``align.py``'s remapping loop consumes
+unchanged.
+"""
+
+from __future__ import annotations
+
+import platform
+from typing import List, Tuple
+
+from ..models import Context
+from ..providers.asr.funasr import FunASRUnavailable, transcribe_with_funasr
+from ..utils.optional_deps import probe
+
+
+class BackendUnavailable(Exception):
+    """Raised when a backend cannot be initialized."""
+
+
+def select_align_backend(ctx: Context) -> Tuple[str, str]:
+    """
+    Returns:
+        ``(backend, reason)``.
+
+        ``backend`` is one of ``"whisperx"``, ``"faster_whisper"``,
+        ``"funasr"``, ``"none"``. The decision is based on:
+
+        1. Explicit override via ``ctx.metadata['align_backend']``
+        2. GPU available + whisperx importable → whisperx
+        3. CPU + whisperx importable + non-Windows → whisperx
+        (k2-fsa has prebuilt wheels on Linux/macOS)
+        4. Windows CPU + whisperx importable + faster_whisper → faster_whisper
+        (k2-fsa has no prebuilt Windows CPU wheel)
+        5. Windows CPU + whisperx importable + faster_whisper missing + funasr → funasr
+        6. whisperx not importable → faster_whisper
+        7. faster_whisper not importable → funasr (Chinese ASR fallback)
+        8. none importable → none
+    """
+    # 1. Explicit override
+    override = ctx.metadata.get("align_backend")
+    if override in ("whisperx", "faster_whisper", "funasr"):
+        ok, _ = probe(override)
+        if ok:
+            return override, f"explicit override (align_backend={override})"
+        # Override requested but unavailable — fall through to auto-detect
+        # and record the failure reason in metadata
+        ctx.metadata.setdefault("align_backend_attempted", []).append(
+            f"{override}: explicit override but import failed"
+        )
+
+    # 2-7. Auto-detect
+    wx_ok, _ = probe("whisperx")
+    fw_ok, _ = probe("faster_whisper")
+    fa_ok, _ = probe("funasr")
+    device = ctx.metadata.get("whisperx_device", "cpu")
+    is_windows = platform.system() == "Windows"
+
+    if wx_ok:
+        if device == "cuda":
+            return "whisperx", "GPU available + whisperx importable"
+        if not is_windows:
+            # Linux/macOS CPU: k2-fsa has prebuilt wheels
+            return "whisperx", "CPU (non-Windows) + whisperx importable"
+        # Windows CPU: k2-fsa likely missing → prefer faster_whisper
+        if fw_ok:
+            return "faster_whisper", "Windows CPU (k2-fsa may be unavailable) → faster_whisper"
+        # faster_whisper not installed — try funasr before falling back to
+        # whisperx (which may fail at load_align_model time on Windows).
+        if fa_ok:
+            return "funasr", "Windows CPU, faster_whisper missing → funasr"
+        return "whisperx", "Windows CPU but faster_whisper/funasr not installed; trying whisperx"
+
+    # whisperx not importable
+    if fw_ok:
+        return "faster_whisper", "whisperx not importable → faster_whisper"
+    if fa_ok:
+        return "funasr", "whisperx/faster_whisper not importable → funasr"
+
+    return "none", "no alignment backend importable (whisperx/faster_whisper/funasr)"
+
+
+def run_faster_whisper(ctx: Context) -> List[dict]:
+    """Transcribe with faster-whisper, return ``wx_segments`` list.
+
+    Each element: ``{"start": float, "end": float, "text": str}`` — the
+    same shape WhisperX's transcribe produces, so ``align.py``'s
+    remapping loop consumes it unchanged.
+
+    No forced alignment (word-level timestamps) — segment-level only.
+    This is sufficient for ``subtitle.py`` which only reads
+    ``seg.start`` / ``seg.end`` / ``seg.text``.
+    """
+    assert ctx.audio_path is not None, "audio_path must be set before alignment"
+    return transcribe_with_faster_whisper(
+        audio_path=ctx.audio_path,
+        device=ctx.metadata.get("whisperx_device", "cpu"),
+        language=ctx.metadata.get("whisperx_language", "zh"),
+        model_size=ctx.metadata.get("whisperx_model", "small"),
+    )
+
+
+def transcribe_with_faster_whisper(
+    audio_path: str,
+    device: str = "cpu",
+    language: str = "zh",
+    model_size: str = "small",
+) -> List[dict]:
+    """Transcribe an arbitrary audio/video file with faster-whisper.
+
+    Shared backend for both ``align.py`` (narration audio) and
+    ``match.py`` (video audio track). Returns segment-level timestamps
+    only (no forced alignment).
+    """
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as e:
+        raise BackendUnavailable(f"faster-whisper not installed: {e}") from e
+
+    # CPU: int8 quantization (fast + small); GPU: float16
+    if device == "cuda":
+        compute_type = "float16"
+        fw_device = "cuda"
+    else:
+        compute_type = "int8"
+        fw_device = "cpu"
+
+    model = WhisperModel(model_size, device=fw_device, compute_type=compute_type)
+    segments, _info = model.transcribe(audio_path, language=language)
+
+    wx_segments: List[dict] = []
+    for seg in segments:
+        text = seg.text.strip()
+        if text:
+            wx_segments.append(
+                {
+                    "start": float(seg.start),
+                    "end": float(seg.end),
+                    "text": text,
+                }
+            )
+    return wx_segments
+
+
+def run_funasr(ctx: Context) -> List[dict]:
+    """Transcribe with FunASR (Chinese ASR), return ``wx_segments`` list.
+
+    Same output shape as the other backends so ``align.py``'s remapping
+    loop consumes it unchanged. Draws its settings from ``ctx.metadata``
+    (``whisperx_device`` reuse, ``funasr_model``, ``funasr_hotword``).
+    """
+    assert ctx.audio_path is not None, "audio_path must be set before alignment"
+    try:
+        return transcribe_with_funasr(
+            audio_path=ctx.audio_path,
+            device=ctx.metadata.get("whisperx_device", "cpu"),
+            model=ctx.metadata.get("funasr_model"),
+            hotword=ctx.metadata.get("funasr_hotword"),
+        )
+    except FunASRUnavailable as exc:
+        raise BackendUnavailable(str(exc)) from exc
