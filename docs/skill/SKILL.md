@@ -1,21 +1,23 @@
 ---
 name: movie-narrator
 description: |
-  Turn a single text prompt into a narrated movie-recap video. The `mn` CLI
-  orchestrates a 16-step pipeline (resolve → assets → research → script →
-  TTS → align → scenes → match → BGM → translate → subtitle → QA → render →
-  validate → export). This skill lets AI agents (Claude Code, Codex, Cursor,
+  Run an AI-assisted movie and drama recap editing workflow from a brief and
+  source footage. The `mn` CLI orchestrates source analysis, research,
+  script review, TTS, subtitles, shot matching, timeline alignment, QA,
+  FFmpeg rendering, and export, with explicit human gates for review and
+  publication. This skill lets AI agents (Claude Code, Codex, Cursor,
   Copilot, etc.) drive the CLI directly and know exactly which commands exist,
   what they do, and how to chain them.
 version: 1.0.0
 ---
 
-# movie-narrator CLI Skill
+# 影视解说自动化剪辑 Skill
 
-`mn` is a Python CLI that generates narrated movie-recap videos from a single
-prompt. This document is the machine-readable capability map for AI agents —
-read it before issuing `mn` commands so you use the right command, flags, and
-conventions.
+`mn` is a Python CLI for source-first movie and drama recap editing. It turns
+source footage and a recap brief into reviewed narration, subtitles, matched
+shots, and rendered video. This document is the machine-readable capability
+map for AI agents — read it before issuing `mn` commands so you use the right
+command, flags, and conventions.
 
 ## Install & Verify
 
