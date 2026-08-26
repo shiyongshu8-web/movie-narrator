@@ -1,0 +1,342 @@
+# SPDX-FileCopyrightText: 2026 zcbacxc
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Deliverable media QA — probe a rendered video and flag publishability issues.
+
+Probes container/streams/volume via ffprobe when available, falling back to
+the imageio-ffmpeg-bundled ``ffmpeg`` binary (which is NOT ffprobe) by
+parsing ``ffmpeg -i`` stderr. Volume is measured with ``volumedetect``.
+All checks are advisory except when wired as a hard pipeline step.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from .ffmpeg_bin import ffmpeg_bin
+from .video_qa import check_slideshow_risk
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class QAIssue:
+    """A single failed QA check."""
+
+    code: str
+    message: str
+
+
+@dataclass
+class QAReport:
+    """Aggregated QA result for a deliverable."""
+
+    ok: bool
+    issues: list[QAIssue] = field(default_factory=list)
+    metrics: dict = field(default_factory=dict)
+
+
+def _ffmpeg_bin() -> str:
+    """Backward-compatible alias for :func:`ffmpeg_bin`.
+
+    Kept so existing internal callers (and any direct test imports) keep
+    working unchanged; new code should import ``ffmpeg_bin`` directly.
+    """
+    return ffmpeg_bin()
+
+
+def _run(cmd: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess:
+    """Run a subprocess with UTF-8 decoding (Windows-safe).
+
+    ``text=True`` alone uses the system locale (GBK on Chinese Windows),
+    which crashes when ffprobe/ffmpeg emit non-GBK bytes and leaves
+    stdout/stderr empty — causing false QA failures. Force UTF-8 with
+    replacement so probe parsing always sees *some* text.
+    """
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+
+
+def _probe_with_ffprobe(path: str) -> Optional[dict]:
+    """Probe via ffprobe JSON output. Returns None if ffprobe unavailable."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        proc = _run(
+            [
+                ffprobe,
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                path,
+            ],
+            timeout=30,
+        )
+        if proc.returncode != 0 or not (proc.stdout or "").strip():
+            return None
+        data = json.loads(proc.stdout)
+    except Exception:
+        logger.debug("ffprobe probe failed", exc_info=True)
+        return None
+
+    streams = data.get("streams", [])
+    fmt = data.get("format", {})
+    v_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    a_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+
+    duration = 0.0
+    try:
+        duration = float(
+            fmt.get("duration") or (v_stream.get("duration") if v_stream else None) or 0.0
+        )
+    except (TypeError, ValueError):
+        duration = 0.0
+
+    width = int(v_stream.get("width", 0)) if v_stream else 0
+    height = int(v_stream.get("height", 0)) if v_stream else 0
+
+    return {
+        "duration": duration,
+        "has_video": v_stream is not None,
+        "has_audio": a_stream is not None,
+        "width": width,
+        "height": height,
+        "size_bytes": _file_size(path),
+        "mean_volume": _detect_volume(path),
+    }
+
+
+def _probe_with_ffmpeg(path: str) -> dict:
+    """Fallback probe using ``ffmpeg -i`` stderr parsing."""
+    bin_path = _ffmpeg_bin()
+    try:
+        proc = _run(
+            [bin_path, "-i", path, "-hide_banner"],
+            timeout=30,
+        )
+        # ffmpeg -i exits non-zero when there's no output, but stderr still
+        # contains the stream info we need.
+        stderr = proc.stderr or ""
+    except Exception:
+        logger.debug("ffmpeg -i probe failed", exc_info=True)
+        stderr = ""
+
+    has_video = "Video:" in stderr
+    has_audio = "Audio:" in stderr
+
+    duration = 0.0
+    m = re.search(r"Duration:\s*([\d:.]+)", stderr)
+    if m:
+        parts = m.group(1).split(":")
+        try:
+            duration = sum(float(p) * (60**i) for i, p in enumerate(reversed(parts)))
+        except ValueError:
+            duration = 0.0
+
+    width, height = 0, 0
+    m = re.search(r"(\d{2,5})x(\d{2,5})", stderr)
+    if m:
+        width, height = int(m.group(1)), int(m.group(2))
+
+    return {
+        "duration": duration,
+        "has_video": has_video,
+        "has_audio": has_audio,
+        "width": width,
+        "height": height,
+        "size_bytes": _file_size(path),
+        "mean_volume": _detect_volume(path),
+    }
+
+
+def _file_size(path: str) -> int:
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
+def _detect_volume(path: str) -> Optional[float]:
+    """Run ``ffmpeg -af volumedetect`` and parse mean_volume (dBFS).
+
+    Returns:
+        None if the file has no audio or ffmpeg fails.
+    """
+    bin_path = _ffmpeg_bin()
+    try:
+        proc = _run(
+            [bin_path, "-i", path, "-af", "volumedetect", "-f", "null", "-"],
+            timeout=60,
+        )
+        stderr = proc.stderr or ""
+    except Exception:
+        logger.debug("volumedetect failed", exc_info=True)
+        return None
+
+    m = re.search(r"mean_volume:\s*([-\d.]+)\s*dB", stderr)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def probe_media(path: str) -> dict:
+    """
+    Returns:
+        Ffprobe-like metrics for ``path``.
+
+        Keys: ``duration``, ``has_video``, ``has_audio``, ``mean_volume``,
+        ``width``, ``height``, ``size_bytes``. ``mean_volume`` is None when
+        the file has no audio or volumedetect is unavailable.
+    """
+    result = _probe_with_ffprobe(path)
+    if result is None:
+        result = _probe_with_ffmpeg(path)
+    return result
+
+
+def evaluate_deliverable(
+    video_path: str,
+    *,
+    expected_duration: float,
+    max_silence_db: float = -50.0,
+    min_duration_ratio: float = 0.85,
+    max_duration_ratio: float = 1.15,
+    min_size_bytes: int = 10_000,
+    max_slideshow_risk: Optional[float] = None,
+    max_black_ratio: Optional[float] = None,
+) -> QAReport:
+    """Run all QA checks and return a structured report.
+
+    Checks:
+    1. file exists and ``size >= min_size_bytes``
+    2. has video stream and audio stream
+    3. duration within ``[min_duration_ratio, max_duration_ratio]`` of expected
+    4. ``mean_volume > max_silence_db`` (audio is not near-silent)
+    5. width/height > 0
+    6. (G2) slideshow-degradation risk <= ``max_slideshow_risk`` (opt-in)
+    7. (G2) ratio of near-black frames <= ``max_black_ratio`` (opt-in)
+    """
+    issues: list[QAIssue] = []
+    metrics: dict = {}
+
+    if not Path(video_path).exists():
+        return QAReport(
+            ok=False,
+            issues=[QAIssue("missing_file", f"file not found: {video_path}")],
+            metrics={},
+        )
+
+    metrics = probe_media(video_path)
+    size = metrics.get("size_bytes", 0)
+    if size < min_size_bytes:
+        issues.append(QAIssue("tiny_file", f"file size {size}B < {min_size_bytes}B"))
+
+    if not metrics.get("has_video"):
+        issues.append(QAIssue("no_video_stream", "file has no video stream"))
+    if not metrics.get("has_audio"):
+        issues.append(QAIssue("no_audio_stream", "file has no audio stream"))
+
+    duration = metrics.get("duration", 0.0) or 0.0
+    if expected_duration > 0 and duration > 0:
+        ratio = duration / expected_duration
+        if ratio < min_duration_ratio:
+            issues.append(
+                QAIssue(
+                    "too_short",
+                    f"duration {duration:.2f}s is {ratio:.2%} of expected {expected_duration:.2f}s "
+                    f"(min {min_duration_ratio:.0%})",
+                )
+            )
+        elif ratio > max_duration_ratio:
+            issues.append(
+                QAIssue(
+                    "too_long",
+                    f"duration {duration:.2f}s is {ratio:.2%} of expected {expected_duration:.2f}s "
+                    f"(max {max_duration_ratio:.0%})",
+                )
+            )
+
+    mean_vol = metrics.get("mean_volume")
+    if mean_vol is not None and mean_vol <= max_silence_db:
+        issues.append(
+            QAIssue(
+                "silent_audio",
+                f"mean volume {mean_vol:.1f}dB <= silence floor {max_silence_db:.1f}dB",
+            )
+        )
+
+    # ── AQ-05: fail-closed for unknown volume ──
+    # If the file claims to have audio but volumedetect failed to parse
+    # (mean_volume=None), we cannot verify the audio is not silent.
+    # Previously this silently skipped the silence check, allowing
+    # near-silent or broken-audio deliverables to pass QA.
+    # Fix: treat as a warning issue so the pipeline at least surfaces it.
+    has_audio = metrics.get("has_audio", False)
+    if mean_vol is None and has_audio:
+        issues.append(
+            QAIssue(
+                "volume_unknown",
+                "audio stream present but volumedetect failed — cannot verify "
+                "audio is not silent (ffmpeg may lack decoder or file may be corrupt)",
+            )
+        )
+
+    if metrics.get("width", 0) <= 0 or metrics.get("height", 0) <= 0:
+        issues.append(
+            QAIssue(
+                "bad_resolution",
+                f"invalid dimensions {metrics.get('width')}x{metrics.get('height')}",
+            )
+        )
+
+    # ── G2: slideshow-degradation & near-black frame checks (opt-in) ──
+    # Both are opt-in via the *max_* parameters (None = disabled) so existing
+    # callers keep their behavior. They use ffmpeg frame sampling + PIL luma,
+    # degrade silently (probed=False) when those tools are unavailable.
+    if max_slideshow_risk is not None or max_black_ratio is not None:
+        slides = check_slideshow_risk(video_path)
+        metrics["slideshow_risk"] = slides.risk
+        metrics["slideshow_static_ratio"] = slides.static_ratio
+        metrics["slideshow_black_ratio"] = slides.black_ratio
+        metrics["slideshow_samples"] = slides.samples
+        metrics["slideshow_probed"] = slides.probed
+
+        if slides.probed and max_slideshow_risk is not None and slides.risk > max_slideshow_risk:
+            issues.append(
+                QAIssue(
+                    "slideshow_degraded",
+                    f"slideshow risk {slides.risk:.2f} exceeds max {max_slideshow_risk:.2f} "
+                    f"(static {slides.static_ratio:.0%}, avg motion {slides.avg_motion:.2f})",
+                )
+            )
+        if slides.probed and max_black_ratio is not None and slides.black_ratio > max_black_ratio:
+            issues.append(
+                QAIssue(
+                    "excessive_black_frames",
+                    f"near-black frames {slides.black_ratio:.0%} exceed max {max_black_ratio:.0%}",
+                )
+            )
+
+    return QAReport(ok=len(issues) == 0, issues=issues, metrics=metrics)
