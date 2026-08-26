@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+.venv
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Output
+output/
+*.mp4
+*.mp3
+*.srt
+*.json
+!assets/*.mp3
+!assets/fonts/*
+!schemas/
+!schemas/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# AI Tools
+.claude/
+.mimocode/
+CLAUDE.md
+superpowers/
+
+# Local-only docs (not for public repo)
+docs-nocommit/
+
+# Stale webui/ ghost entry (NTFS MFT artifact; dir deleted, split to movie-narrator-web)
+webui/
+.git-broken
+/site/

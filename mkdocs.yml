@@ -1,0 +1,82 @@
+site_name: movie-narrator
+site_description: Generate narrated movie recap videos from a single prompt.
+site_url: https://github.com/zcbacxc/movie-narrator
+repo_url: https://github.com/zcbacxc/movie-narrator
+repo_name: zcbacxc/movie-narrator
+edit_uri: edit/main/docs/
+
+theme:
+  name: readthedocs
+  highlightjs: true
+  hljs_languages:
+    - python
+    - yaml
+    - bash
+    - toml
+
+nav:
+  - Home: index.md
+  - Quickstart: QUICKSTART.md
+  - Tutorial: TUTORIAL.md
+  - Best Practices: BEST_PRACTICES.md
+  - Roadmap: ROADMAP.md
+  - Migration Guide: MIGRATION.md
+  - API Stability: STABILITY.md
+  - Release Checklist: RELEASE_CHECKLIST.md
+  - LLM Providers: LLM_PROVIDERS.md
+  - AI Guide: AI_GUIDE.md
+  - Plugin Development: PLUGIN_DEVELOPMENT.md
+  - Architecture: ARCHITECTURE.md
+  - Architecture Decision Records: ADR.md
+  - Metadata Schema: METADATA_SCHEMA.md
+  - Contributing: CONTRIBUTING.md
+  - Deployment: DEPLOYMENT.md
+  - Observability: OBSERVABILITY.md
+  - Packaging: PACKAGING.md
+  - SDK Reference:
+      - Contract: sdk/contract.md
+      - Models: sdk/models.md
+      - Pipeline: sdk/pipeline.md
+      - Step Registry: sdk/step_registry.md
+      - Pipeline Errors: sdk/errors.md
+      - Registries: sdk/registries.md
+      - TTS: sdk/tts.md
+      - Vision: sdk/vision.md
+      - Presets: sdk/presets.md
+      - Cloud: sdk/cloud.md
+      - Reliability: sdk/reliability.md
+
+plugins:
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_signature_annotations: true
+            separate_signature: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            filters:
+              - "!^_"
+              - "!^__"
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+      # Preserve CJK characters in anchor slugs. mkdocs' default slugify
+      # strips non-ASCII, so Chinese headings (e.g. `## 环境要求`) would
+      # generate `_2` instead of `#环境要求`, breaking both the TOC links
+      # and any `docs/`-internal cross-references. pymdownx.slugs keeps the
+      # unicode text intact (matching the anchors GitHub already generates)
+      # and lowercases latin headings to match hand-written `#...` links.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences
