@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://movie-narrator.local/schemas/narration_segment.schema.json",
+  "title": "Event-bound narration segments",
+  "type": "object",
+  "required": ["schema_version", "status", "segments"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["SCRIPTED", "TTS_READY", "UNVERIFIED", "BLOCKED"]},
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["narration_id", "event_ids", "text", "target_visual_start", "target_visual_end", "target_duration"],
+        "properties": {
+          "narration_id": {"type": "string"},
+          "event_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "text": {"type": "string", "minLength": 1},
+          "target_visual_start": {"type": "number", "minimum": 0},
+          "target_visual_end": {"type": "number", "exclusiveMinimum": 0},
+          "target_duration": {"type": "number", "exclusiveMinimum": 0},
+          "actual_tts_duration": {"type": ["number", "null"], "exclusiveMinimum": 0}
+        }
+      }
+    }
+  }
+}

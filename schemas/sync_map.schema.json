@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://movie-narrator.local/schemas/sync_map.schema.json",
+  "title": "Narration visual synchronization map",
+  "type": "object",
+  "required": ["schema_version", "status", "rows"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["SYNC_MAPPED", "SYNC_QC", "FAIL", "UNVERIFIED", "STALE"]},
+    "timeline_readback_hash": {"type": ["string", "null"]},
+    "rows": {"type": "array", "minItems": 1}
+  }
+}

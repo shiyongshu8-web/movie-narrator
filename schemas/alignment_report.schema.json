@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://movie-narrator.local/schemas/alignment_report.schema.json",
+  "title": "Semantic alignment report",
+  "type": "object",
+  "required": ["schema_version", "status", "final_ready", "issues", "unknowns", "rows_checked"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["PASS", "FAIL", "PASS_WITH_UNKNOWN"]},
+    "final_ready": {"type": "boolean"},
+    "issues": {"type": "array"},
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "rows_checked": {"type": "integer", "minimum": 0}
+  }
+}

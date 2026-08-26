@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://movie-narrator.local/schemas/visual_event.schema.json",
+  "title": "Visual Event Index",
+  "type": "object",
+  "required": ["schema_version", "source_video", "source_sha256", "index_status", "events"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "source_video": {"type": "string"},
+    "source_sha256": {"type": "string", "minLength": 1},
+    "scene_database_path": {"type": "string"},
+    "index_status": {"enum": ["EVENT_INDEXED", "UNVERIFIED", "BLOCKED"]},
+    "events": {"type": "array", "minItems": 1}
+  }
+}
