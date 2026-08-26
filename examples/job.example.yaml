@@ -1,0 +1,218 @@
+# Movie Narrator 任务配置文件模板
+# 所有字段可选 — 不填则使用内联默认值
+# 优先级：CLI 参数 > 本文件 > 内联默认值
+#
+# 边界说明：
+#   .env (Settings) = LLM + TTS 基础配置（凭证、端点、模型、调用参数）
+#   job.yaml (本文件) = 所有流水线行为参数（场景、匹配、渲染、翻译、BGM 等）
+
+# ============================================================
+# 基础参数
+# ============================================================
+movie: ""                   # 电影名称（通常通过 CLI --movie 传入）
+style: ""                   # 解说风格，如：热血搞笑 / 历史悬疑 / 温情催泪（通常 CLI 传入）
+duration: 60                # 目标视频时长（秒）
+voice: zh-CN-YunxiNeural    # TTS 音色（留空跟随 provider 默认）
+video_format: "16:9"        # 视频比例：16:9 或 9:16（旧键名 format 已弃用，仍向后兼容）
+keep_cache: false           # 是否保留 TTS 缓存文件
+
+# ============================================================
+# 路径（相对路径以本文件所在目录为基准解析）
+# ============================================================
+video: ""                   # 源电影文件路径（通常 CLI --video 传入）
+library_dir:                # 电影库目录，按文件名模糊匹配
+bgm: ""                     # 背景音乐文件路径（.mp3 / .wav 等）
+
+# ============================================================
+# 布尔开关
+# ============================================================
+no_bgm: false               # 强制禁用 BGM（即使配置了 bgm 路径）
+no_clips: false             # 跳过场景片段导出
+strict: false               # 软步骤失败时中止流水线
+
+# ============================================================
+# 软步骤开关（键名对应 PipelineStatus 字段）
+# ============================================================
+steps:
+  research: true            # LLM 电影剧情调研（写入 research.json）
+  align: false              # WhisperX 音频对齐（需 [ml] 额外依赖）
+  scene: true               # PySceneDetect 场景检测（需 [media] 额外依赖）
+  match: true               # 场景 ↔ 解说片段匹配
+  bgm: false                # 背景音乐混音（需配置 bgm 路径）
+  export: false             # 场景子片段导出为 .mp4（需 [media] 额外依赖）
+  translate: false          # 多语言字幕翻译（需设置 subtitle_lang）
+
+# ============================================================
+# 多语言字幕
+# ============================================================
+# subtitle_lang 留空 = 关闭翻译功能（仅生成原版 subtitle.srt）
+# 设置 lang 后默认 mode=original（翻译文件落盘，渲染画面仍用原版）
+# 想要画面显示翻译需显式 mode=translated 或 mode=bilingual
+subtitle_lang: ""           # 目标语言标签，如 en / ja / zh-TW；留空 = 关闭翻译
+subtitle_mode: original     # original | translated | bilingual
+
+# ============================================================
+# 解说风格 Preset（v0.4.15+）
+# ============================================================
+# 内置三种 preset，CLI --narration-preset / -p 优先级高于本字段
+#   douyin-fast      18句×3.3s, 快切镜, 深度闪避 (-10dB), 口语+感叹
+#   mainstream-dry   12句×5s, 慢切镜, 轻音乐 (-15dB), 从容叙事 (谷阿莫节奏)
+#   bilibili-long    8句×7.5s, 大场景合并, 极轻BGM (-18dB), 书面长解说
+# 留空 = douyin-fast（向后兼容 v0.4.14 行为）
+# v0.4.16+: 两阶段生成确保 prompt_target_sentences 被严格遵守
+narration_preset: ""        # douyin-fast | mainstream-dry | bilibili-long
+
+# ============================================================
+# 精细参数（所有流水线行为配置都在这里）
+# ============================================================
+# 白名单（其余键会被拒绝）：
+#   场景: scene_threshold / scene_frame_skip
+#   匹配: match_min_score / match_speed_clamp_min / match_speed_clamp_max
+#          scene_merge_min_duration / match_drop_scene_min_duration
+#          embedding_model_name
+#          match_diversity_window / match_max_scene_reuse
+#          match_timeline_mode / match_act_weights
+#          match_topk / match_topk_reuse_penalty
+#          match_skip_intro_sec / match_drop_dark_luma / match_source_window
+#          match_visual_features
+#   视觉: vision_captioner
+#   BGM:  bgm_gain_db / bgm_duck_db / bgm_normalize / audio_target_dbfs
+#          bgm_loudnorm / bgm_metadata_path
+#          bgm_ambient_path (v0.7.1+) / bgm_ambient_gain_db (v0.7.1+)
+#   TTS:  tts_pause_ms / tts_max_concurrent / tts_audio_format / tts_audio_bitrate
+#   翻译: translate_source_lang / translate_provider / translate_retries
+#          translate_chunk_chars / translate_chunk_size
+#   调研: research_provider
+#   对齐: whisperx_device / whisperx_model / whisperx_language / align_backend
+#   渲染: render_fps / render_video_codec / render_audio_codec / render_threads
+#          render_bg_color / render_font_size / render_output_name / render_ffmpeg_timeout
+#          render_fit_mode / render_crf / render_preset / render_faststart
+#          render_subtitle_position / render_subtitle_max_width_ratio
+#          render_subtitle_bottom_margin_ratio
+#          render_require_footage / render_min_footage_coverage / render_profile
+#          render_title_card_sec / render_cover_export / render_vertical_safe_area
+#          render_encoder (v0.7.0+) / render_transition (v0.7.1+)
+#          render_text_animation (v0.7.1+) / render_preview_mode (v0.7.2+)
+#          render_template
+#   质检: qa_enabled / qa_max_silence_db / qa_min_duration_ratio / qa_max_duration_ratio
+#          qa_max_slideshow_risk / qa_max_black_ratio
+#   文案: prompt_target_sentences / prompt_target_segment_duration
+#         prompt_max_chars_per_sentence / prompt_hook_seconds
+#         hook_templates / set_pieces
+#   异步: async_timeout / async_max_workers
+#   视频: video_sizes
+#   平台: target_platform / lang
+#   视角: narrator_perspective / focus_character
+params:
+  # ---- 场景检测 ----
+  scene_threshold: 27.0     # PySceneDetect 灵敏度（越大越不敏感，切分越少）
+  scene_frame_skip: 10      # 每 N 帧检测 1 帧（越大越快，精度越低）
+
+  # ---- 场景匹配 ----
+  match_min_score: 0.25     # embedding 匹配最低余弦相似度（低于此值回退 heuristic 基线，不丢弃）
+  # 速度因子 = 匹配到的场景时长 / 解说片段时长。
+  # clamp 将速度限制在舒适范围，防止相邻片段忽快忽慢。
+  # v0.4.13 起默认值收紧至 0.85–1.25（生产可用节奏）。
+  match_speed_clamp_min: 0.85    # 最慢速度因子（<1 = 慢放上限）
+  match_speed_clamp_max: 1.25    # 最快速度因子（>1 = 快进上限）
+  scene_merge_min_duration: 2.0  # 场景最短时长（秒），0=不合并；2.0 给 clamp 更大窗口
+  # match_drop_scene_min_duration: 0.4  # 合并后丢弃短于此阈值的场景（秒）
+  # embedding_model_name: paraphrase-multilingual-MiniLM-L12-v2
+  # match_diversity_window: 3       # 滑动窗口大小（段），检测连续场景复用
+  # match_max_scene_reuse: 2        # 窗口内同一场景最大允许出现次数（超过则换景）
+  # match_timeline_mode: uniform    # uniform（默认，全片比例映射）| weighted_acts（四幕时间桶，高光集中在高潮幕）
+  # match_act_weights: [0.15, 0.25, 0.40, 0.20]  # 四幕时间占比（开/中/高潮/尾），仅 weighted_acts 模式生效
+  # match_topk: 5                    # 每句取 top-K 候选场景，贪心分配时避免近期已用场景（默认 5，0/1 = 禁用退回 top-1）
+  # match_topk_reuse_penalty: 0.15   # 近期已用场景的分数扣减值（默认 0.15，越大越倾向换景）
+
+  # ---- BGM / 音频 ----
+  # bgm_gain_db: -18          # BGM 基础增益（dB）
+  # bgm_duck_db: -10          # 旁白在场时额外衰减（dB）
+  # bgm_ducking_backend: envelope   # ducking 实现: envelope(默认) | sidechaincompress
+  # bgm_normalize: true       # 混音后峰值归一化到 audio_target_dbfs
+  # audio_target_dbfs: -14.0  # 归一化目标响度（dBFS）
+
+  # ---- TTS 音频 ----
+  # tts_pause_ms: 300         # 解说片段间静音时长（毫秒）
+  # tts_max_concurrent: 3     # 并发 TTS 合成数
+  # tts_audio_format: mp3     # 旁白导出格式
+  # tts_audio_bitrate: 128k   # 旁白导出比特率
+
+  # ---- 翻译 ----
+  # translate_source_lang: zh-CN  # 源语言
+  # translate_provider: llm   # 翻译后端（目前仅支持 llm）
+  # translate_retries: 3      # 翻译 LLM 失败后重试次数
+  # translate_chunk_chars: 4000   # 翻译分块字符阈值
+  # translate_chunk_size: 20      # 翻译分块条数阈值
+
+  # ---- 调研 ----
+  research_provider: llm    # 调研后端（目前仅支持 llm）
+
+  # ---- 视觉描述（VLM 字幕）----
+  # vision_captioner: vlm    # none（默认）| stub（占位标签）| vlm（云端 VLM API，需配置 MN_VLM_* 环境变量）
+  # vlm provider 会从每个场景中点提取关键帧，发送给 OpenAI 兼容的视觉 API（GPT-4o/Qwen-VL 等）
+  # 返回真实视觉描述，解锁 match.py 中的 embedding re-rank 功能
+
+  # ---- WhisperX（需 [ml] 额外依赖）----
+  # whisperx_device: cpu      # cpu | cuda
+  # whisperx_model: medium    # tiny|base|small|medium|large
+  # whisperx_language: zh     # 转录语言
+  # align_backend: auto       # auto | whisperx | faster_whisper | funasr（auto=按环境自动选择）
+
+  # ---- 渲染 ----
+  # render_fps: 24            # 输出帧率
+  # render_video_codec: libx264  # 视频编码器
+  # render_audio_codec: aac   # 音频编码器
+  # render_threads: 4         # ffmpeg 编码线程数
+  # render_bg_color: "20,20,30"  # 背景色 RGB（逗号分隔）
+  # render_font_size: 100     # 文字叠加字体大小
+  # render_output_name: final.mp4  # 最终视频文件名
+  # render_ffmpeg_timeout: 300  # export_clips ffmpeg 超时（秒）
+  # ---- 渲染生产质量（v0.4.13 起的默认值，按需覆盖）----
+  # render_fit_mode: cover        # cover = 裁剪填充画布 | contain = 信箱模式
+  # render_crf: 18                # 质量（越小越高，18≈视觉无损）
+  # render_preset: slow           # x264 编码预设（ultrafast…veryslow）
+  # render_faststart: true        # +faststart（VOD 友好）
+  # render_subtitle_position: bottom  # bottom | center
+  # render_subtitle_max_width_ratio: 0.9   # 字幕最大宽度占画布比例
+  # render_subtitle_bottom_margin_ratio: 0.08  # 底部留白比例
+  # render_require_footage: false    # true=覆盖率低于阈值时 warn + 标记 _degraded_steps
+  # render_min_footage_coverage: 0.5 # footage 覆盖率阈值（0-1）
+  # render_profile: publish          # publish（默认，crf=18/preset=slow）| draft（crf=28/preset=ultrafast，快速迭代）
+  # ---- 包装三件套（v0.4.26+，由 preset 自动注入）----
+  # render_title_card_sec: 1.0        # 片头标题卡时长（秒，0=禁用）；douyin-fast=1.0, bilibili-long=1.2
+  # render_cover_export: true         # 导出 cover.jpg（取最高分镜头中点帧 + 电影名叠加）；失败不影响管线
+  # render_vertical_safe_area: true   # 9:16 竖屏时自动收紧字幕安全区（bottom_margin≥0.15, max_width≤0.82）
+  # ---- v0.7.0+: GPU 编码 ----
+  # render_encoder: auto         # auto（默认，自动检测）| cpu | nvenc | vaapi | videotoolbox
+  # ---- v0.7.1+: 场景转场 + 文字动画 ----
+  # render_transition: fade      # none | fade | dissolve | slide（场景间转场效果）
+  # render_transition_duration: 0.5  # 转场时长（秒）
+  # render_text_animation: fade  # none | fade | slide_up | slide_left（字幕入场动画）
+  # render_text_animation_duration: 0.3  # 文字动画时长（秒）
+  # bgm_ambient_path: ""         # 环境/音效轨道文件路径（.mp3 / .wav），与主 BGM 叠加
+  # bgm_ambient_gain_db: -25     # 环境音轨增益（dB，默认较低以免压过旁白）
+  # ---- v0.7.2+: 预览模式 ----
+  # render_preview_mode: false   # true=仅渲染前 N 秒用于快速确认效果
+  # render_preview_sec: 10       # 预览时长（秒）
+
+  # ---- 成片质检（v0.4.13 新增硬步骤 validate_deliverable）----
+  # qa_enabled: true              # false=显式关闭；CI 默认跳过，本地默认开启
+  # qa_max_silence_db: -50.0      # 平均音量低于此值判定为静音失败
+  # qa_min_duration_ratio: 0.85   # 成片时长 < 预期*0.85 判定失败
+  # qa_max_duration_ratio: 1.25   # 成片时长 > 预期*1.25 判定失败(TTS 自然产出可能超 10-20%)
+
+  # ---- 异步 ----
+  # async_timeout: 300        # 异步任务超时（秒）
+  # async_max_workers: 2      # 线程池大小
+
+  # ---- 文案塑形（v0.4.20 新增 / 补全）----
+  # prompt_target_segment_duration: 2.5  # 每段旁白目标时长（秒），影响段数计算
+  # prompt_target_sentences: 18          # 期望段数（两阶段生成第二阶段严格遵守）
+  # prompt_max_chars_per_sentence: 25    # 每段最大字符数（LLM 提示 + 硬截断双重保障）
+  # prompt_hook_seconds: 3               # 开头 hook 秒数
+
+  # ---- 视频分辨率 ----
+  # video_sizes:
+  #   "16:9": [1920, 1080]
+  #   "9:16": [1080, 1920]
