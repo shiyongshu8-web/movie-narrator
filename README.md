@@ -1,23 +1,24 @@
 [![English](https://img.shields.io/badge/English-README-blue)](README.md)
 [![简体中文](https://img.shields.io/badge/简体中文-README-green)](README.zh-CN.md)
 
-# 🎬 Movie Narrator
+# 🎬 Movie & Drama Narrator | 影视解说自动化剪辑
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)
-![CI](https://github.com/zcbacxc/movie-narrator/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/shiyongshu8-web/movie-narrator/actions/workflows/ci.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/movie-narrator)
 ![Downloads](https://img.shields.io/pypi/dm/movie-narrator)
 
-> One Prompt → One Narrated Movie Video
+> One Brief → One Reviewed Movie/Drama Recap Video
 
-Movie Narrator is an open-source toolkit that automatically generates movie recap videos with narration, subtitles, and rendered output from a simple command.
+Movie Narrator is an open-source AI-assisted toolkit for movie and drama recap editing: source analysis, recap writing, narration, subtitles, shot matching, and FFmpeg rendering, with explicit human gates for review and publication.
 
 ---
 
 ## Features
 
-- 🎬 LLM-powered movie recap script generation
+- 🎬 LLM-powered movie and drama recap script generation
+- 🛡️ Source-first media checks and human review gates
 - 🔊 Text-to-Speech narration (Edge-TTS by default)
 - 💬 Automatic SRT subtitle generation
 - 🌐 Multi-language subtitles with LLM translation
@@ -58,7 +59,7 @@ pip install movie-narrator
 ### From Source
 
 ```bash
-git clone https://github.com/zcbacxc/movie-narrator.git
+git clone https://github.com/shiyongshu8-web/movie-narrator.git
 cd movie-narrator
 pip install -e .
 ```
